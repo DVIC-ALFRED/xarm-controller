@@ -97,6 +97,8 @@ class Controller:
         else:
             traj_type = "tpoly"
 
+        # print(command.speed, self.max_speed, self.max_speed // command.speed)
+
         if command.speed > self.max_speed:
             steps = 1
         else:

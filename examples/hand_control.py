@@ -52,9 +52,11 @@ def coords_extracter(controller: Controller):
         x = data[0] * COEFF / 1000
         z = data[1] * COEFF / 1000
 
-        speed = np.linalg.norm(data, ord=2) * COEFF * 5
-        speed = int(speed)
-        # speed = np.log(speed) * COEFF
+        # speed = np.linalg.norm(data, ord=2) * COEFF * 50
+        # speed = int(speed)
+        # # speed = np.log(speed) * COEFF
+        # mvacc = speed * 10
+        speed = 500
         mvacc = speed * 10
 
         curr_pos = controller.future_cartesian_pos
@@ -97,9 +99,13 @@ def main():
 
     cap = cv2.VideoCapture(VIDEO_PATH)  # pylint: disable=no-member
 
-    xarm = XArmReal("172.21.72.200")
-    xarm.connect_loop()
-    controller = Controller(move_real=MOVE_ARM, arm_real=xarm)
+    if MOVE_ARM:
+        xarm_real = XArmReal("172.21.72.200")
+        xarm_real.connect_loop()
+    else:
+        xarm_real = None
+
+    controller = Controller(move_real=MOVE_ARM, arm_real=xarm_real)
     robot_sim = xarm_sim.XArmSim(
         p,
         controller,
