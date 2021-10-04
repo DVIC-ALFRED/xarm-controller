@@ -1,27 +1,38 @@
 import queue
+import threading
+import time
+from typing import Any
 
 import numpy as np
+import pybullet as p
+import pybullet_data as pd
 
 from ..command import Command
 from ..controller import Controller
 
 
-class XArmSim:
+class XArmSim(threading.Thread):
+    """Simulated xArm class."""
+
+    controller: Controller
+    robot_sim: int
+
     def __init__(
         self,
-        bullet_client,
         controller: Controller,
-        joint_positions: list = None,
+        time_step: float = 1.0 / 60.0
     ):
-        self.bullet_client = bullet_client
-        self.controller = controller
+        super().__init__()
 
-        if joint_positions is not None:
-            self.controller.joint_positions = joint_positions
+        p.connect(p.GUI)
+        p.setAdditionalSearchPath(pd.getDataPath())
+
+        self.controller = controller
+        self.time_step = time_step
 
         # default load robot_sim model
-        pybullet_flags = self.bullet_client.URDF_ENABLE_CACHED_GRAPHICS_SHAPES
-        self.robot_sim = self.bullet_client.loadURDF(
+        pybullet_flags = p.URDF_ENABLE_CACHED_GRAPHICS_SHAPES
+        self.robot_sim = p.loadURDF(
             "xarm/xarm6_robot.urdf",
             [0, 0, 0],
             [0, 0, 0, 1],
@@ -31,20 +42,20 @@ class XArmSim:
 
         # set robot_sim to base position
         for joint_num in range(1, self.controller.DOFs + 1):
-            self.bullet_client.changeDynamics(
+            p.changeDynamics(
                 self.robot_sim, joint_num, linearDamping=0, angularDamping=0
             )
-            info = self.bullet_client.getJointInfo(self.robot_sim, joint_num)
+            info = p.getJointInfo(self.robot_sim, joint_num)
 
             jointType = info[2]
-            if jointType == self.bullet_client.JOINT_PRISMATIC:
-                self.bullet_client.resetJointState(
+            if jointType == p.JOINT_PRISMATIC:
+                p.resetJointState(
                     self.robot_sim,
                     joint_num,
                     self.controller.joint_positions[joint_num - 1],
                 )
-            elif jointType == self.bullet_client.JOINT_REVOLUTE:
-                self.bullet_client.resetJointState(
+            elif jointType == p.JOINT_REVOLUTE:
+                p.resetJointState(
                     self.robot_sim,
                     joint_num,
                     self.controller.joint_positions[joint_num - 1],
@@ -54,18 +65,22 @@ class XArmSim:
         self.controller.cartesian_pos = self.get_cartesian_pos()
         self.controller.future_cartesian_pos = self.controller.cartesian_pos
 
-        self.move(self.controller.joint_positions)
+        # self.move(self.controller.joint_positions)
+
+    def run(self):
+        while 1:
+            self.step()
+            p.stepSimulation()
+            time.sleep(self.time_step)
 
     def get_cartesian_pos(self, compute=True):
-        end_effector_state = self.bullet_client.getLinkState(
+        end_effector_state = p.getLinkState(
             self.robot_sim,
             self.controller.end_effector_index,
             computeForwardKinematics=compute,
         )
         end_effector_xyz = end_effector_state[4]
-        end_effector_rpy = self.bullet_client.getEulerFromQuaternion(
-            end_effector_state[5]
-        )
+        end_effector_rpy = p.getEulerFromQuaternion(end_effector_state[5])
         cartesian_pos = end_effector_xyz + end_effector_rpy
         # print(cartesian_pos)
         return Command(*cartesian_pos, is_radian=True)
@@ -90,10 +105,10 @@ class XArmSim:
         xyz = xyzrpy[:3]
         rpy = xyzrpy[3:]
 
-        rpy_quaternion = self.bullet_client.getQuaternionFromEuler(rpy)
+        rpy_quaternion = p.getQuaternionFromEuler(rpy)
 
         if self.controller.use_null_space:
-            # target_joint_positions = self.bullet_client.calculateInverseKinematics(
+            # target_joint_positions = p.calculateInverseKinematics(
             #     self.robot_sim,
             #     self.controller.end_effector_index,
             #     xyz,
@@ -108,7 +123,7 @@ class XArmSim:
             # )
             pass
         else:
-            target_joint_positions = self.bullet_client.calculateInverseKinematics(
+            target_joint_positions = p.calculateInverseKinematics(
                 self.robot_sim,
                 self.controller.end_effector_index,
                 xyz,
@@ -121,18 +136,16 @@ class XArmSim:
     def move(self, target_joint_positions: list):
         if self.controller.use_dynamics:
             for i in range(self.controller.DOFs):
-                self.bullet_client.setJointMotorControl2(
+                p.setJointMotorControl2(
                     self.robot_sim,
                     i + 1,
-                    self.bullet_client.POSITION_CONTROL,
+                    p.POSITION_CONTROL,
                     target_joint_positions[i],
                     force=5 * 240.0,
                 )
         else:
             for i in range(self.controller.DOFs):
-                self.bullet_client.resetJointState(
-                    self.robot_sim, i + 1, target_joint_positions[i]
-                )
+                p.resetJointState(self.robot_sim, i + 1, target_joint_positions[i])
 
         if self.controller.move_real:
             self.controller.arm_real.set_servo_angle_j(  # type: ignore[union-attr]
@@ -169,7 +182,7 @@ class XArmSim:
         self.controller.joint_positions = target_joint_positions
         self.controller.cartesian_pos = self.get_cartesian_pos(compute=True)
 
-        self.bullet_client.addUserDebugLine(
+        p.addUserDebugLine(
             self.controller.cartesian_pos[:3],
             target_position[:3],
         )

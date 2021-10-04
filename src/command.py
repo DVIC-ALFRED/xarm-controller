@@ -52,8 +52,8 @@ class Position:
 class Command(Position):
     """Represents a command send to the controller."""
 
-    speed: int = -1
-    acc: int = -1
+    speed: int = 1
+    acc: int = 1
     is_cartesian: bool = False
     is_relative: bool = False
     do_wait: bool = False

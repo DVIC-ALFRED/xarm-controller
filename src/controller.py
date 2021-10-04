@@ -63,18 +63,19 @@ class Controller:
 
         self.cartesian_pos = Position()
         self.future_cartesian_pos = Position()
-        self.joint_positions = [0] * self.DOFs
+        if move_real and self.arm_real.connected:  # type: ignore
+            self.joint_positions = list(np.deg2rad(self.arm_real.angles))  # type: ignore
+        else:
+            self.joint_positions = [0] * self.DOFs
 
         self.decomposed_command_queue = queue.Queue()
 
-        subscribe("new_command_str", self.decompose_commands)
+        subscribe("new_command_str", decompose_commands)
         subscribe("new_command", self.decompose_command)
 
     def decompose_command(self, command: Command):
         """Create intermediate points from a Command to generate a path."""
         # print(command)
-
-        self.future_cartesian_pos = command
 
         goal_xyzrpy = Position(*command.xyzrpy)
         # goal_xyzrpy = list(map(lambda x: round(x, 4), goal_xyzrpy))
@@ -97,18 +98,20 @@ class Controller:
         )
 
         points = goal_traj.q
-        # print(points)
+        # print(f"{points=}")
 
         for point in points:
             self.decomposed_command_queue.put(point)
 
-    def decompose_commands(self, command_str: str):
-        """Loop for getting commands and decomposing them."""
+        self.future_cartesian_pos = command
 
-        new_command = Command.from_string(command_str)
 
-        post_event("decompose_new_command", new_command)
+def decompose_commands(command_str: str):
+    """Loop for getting commands and decomposing them."""
 
+    new_command = Command.from_string(command_str)
+
+    post_event("decompose_new_command", new_command)
 
 
 def compute_trajectory(

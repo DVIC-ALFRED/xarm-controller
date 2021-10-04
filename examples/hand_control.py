@@ -1,13 +1,10 @@
 import os
 import sys
 import threading
-import time
 from typing import Any
 
 import cv2
 import numpy as np
-import pybullet as p
-import pybullet_data as pd
 import xarm_hand_control.processing.process as xhcpp
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
@@ -16,26 +13,20 @@ import src.sim.robot_sim as xarm_sim
 from src.command import Command
 from src.controller import Controller
 from src.real.robot_real import XArmReal
-from src.event import subscribe, post_event
+from src.event import post_event
 
 VIDEO_PATH = "/dev/video0"
-MOVE_ARM = False
+MOVE_ARM = True
 ARM_IP = "172.21.72.200"
 
-
-def worker(robot: Any, time_step: float) -> None:
-    """Thread to run simulation."""
-
-    while 1:
-        robot.step()
-        p.stepSimulation()
-        time.sleep(time_step)
+lock = threading.Lock()
 
 
 def send_command(command: Command) -> None:
     """Send extracted command to robot."""
 
-    post_event("new_command", command)
+    with lock:
+        post_event("new_command", command)
 
 
 def coords_extracter(controller: Controller):
@@ -53,6 +44,9 @@ def coords_extracter(controller: Controller):
             return
 
         current[0] = 0
+
+        if np.linalg.norm(data[0:2], 2) < 0.1:
+            return
 
         x = data[0] * COEFF / 1000
         z = data[1] * COEFF / 1000
@@ -88,18 +82,8 @@ def coords_extracter(controller: Controller):
     return coords_to_command
 
 
-def setup_pybullet() -> None:
-    """Setup PyBullet environment."""
-
-    p.connect(p.GUI)
-    p.setAdditionalSearchPath(pd.getDataPath())
-
-
 def main():
     """Example: move xArm with hand."""
-
-    time_step = 1.0 / 60.0
-    setup_pybullet()
 
     cap = cv2.VideoCapture(VIDEO_PATH)  # pylint: disable=no-member
 
@@ -110,16 +94,53 @@ def main():
         xarm_real = None
 
     controller = Controller(move_real=MOVE_ARM, arm_real=xarm_real)
-    robot_sim = xarm_sim.XArmSim(
-        p,
-        controller,
-        joint_positions=np.deg2rad(np.array([-90, -65.1, -20.8, -0.6, -4.1, 0.6])),
+    robot_sim = xarm_sim.XArmSim(controller)
+    robot_sim.start()
+
+    send_command(
+        Command(
+            0.207,
+            0.0,
+            0.112,
+            180,
+            0,
+            0,
+            speed=10,
+            is_radian=False,
+            is_cartesian=True,
+            is_relative=False,
+        )
     )
 
-    worker_thread = threading.Thread(
-        target=worker, args=[robot_sim, time_step], daemon=True
+    send_command(
+        Command(
+            0.207,
+            0.0,
+            0.510,
+            180,
+            0,
+            0,
+            speed=10,
+            is_radian=False,
+            is_cartesian=True,
+            is_relative=False,
+        )
     )
-    worker_thread.start()
+
+    send_command(
+        Command(
+            0,
+            -0.2278,
+            0.6439,
+            0,
+            -90,
+            90,
+            speed=10,
+            is_radian=False,
+            is_cartesian=True,
+            is_relative=False,
+        )
+    )
 
     hand_control_thread = threading.Thread(
         target=xhcpp.loop,
@@ -130,19 +151,6 @@ def main():
         daemon=True,
     )
     hand_control_thread.start()
-
-    # send_command(controller, Command(
-    #     0,
-    #     -0.2278,
-    #     0.6439,
-    #     0,
-    #     -90,
-    #     90,
-    #     speed=10,
-    #     is_radian=False,
-    #     is_cartesian=True,
-    #     is_relative=False,
-    # ))
 
     hand_control_thread.join()
 
