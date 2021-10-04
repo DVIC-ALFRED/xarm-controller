@@ -1,5 +1,4 @@
 import queue
-import threading
 from typing import List, Optional
 
 import numpy as np
@@ -8,6 +7,7 @@ from roboticstoolbox.tools.trajectory import Trajectory
 
 from .real.robot_real import XArmReal
 from .command import Position, Command
+from .event import subscribe, post_event
 
 # * -----------------------------------------------------------------
 # * GLOBAL VARIABLES
@@ -15,38 +15,28 @@ from .command import Position, Command
 ROBOT_DOFS = 6
 END_EFFECTOR_INDEX = 6
 MAX_SPEED = 1000
-
-# TODO
-# lower limits for null space (todo: set them to proper range)
-# ll = [-17] * ROBOT_DOFS
-# upper limits for null space (todo: set them to proper range)
-# ul = [17] * ROBOT_DOFS
-# joint ranges for null space (todo: set them to proper range)
-# jr = [17] * ROBOT_DOFS
 # * -----------------------------------------------------------------
+
+# pylint: disable=too-many-instance-attributes,too-many-arguments,too-many-locals
 
 
 class Controller:
     """Robot controller class. Holds global variables used when controlling the robot."""
 
-    # pylint: disable=too-many-instance-attributes
+    DOFs: int
+    end_effector_index: int
+    max_speed: int
 
-    DOFs : int
-    end_effector_index : int
-    max_speed : int
+    move_real: bool
+    arm_real: Optional[XArmReal]
+    use_null_space: bool
+    use_dynamics: bool
 
-    move_real : bool
-    arm_real : Optional[XArmReal]
-    use_null_space : bool
-    use_dynamics : bool
+    cartesian_pos: Position
+    future_cartesian_pos: Position
+    joint_positions: List[int]
 
-    command_queue: queue.Queue
     decomposed_command_queue: queue.Queue
-
-    cartesian_pos : Position
-    future_cartesian_pos : Position
-    joint_positions : List[int]
-    command_decomposer_thread : threading.Thread
 
     def __init__(
         self,
@@ -55,6 +45,9 @@ class Controller:
         use_null_space: bool = False,
         use_dynamics: bool = True,
     ):
+        if move_real and arm_real is None:
+            raise Exception("arm must not be None if move_real is True")
+
         self.DOFs = ROBOT_DOFS
         self.end_effector_index = END_EFFECTOR_INDEX
         self.max_speed = MAX_SPEED
@@ -68,21 +61,17 @@ class Controller:
         self.use_null_space = use_null_space
         self.use_dynamics = use_dynamics
 
-        if self.move_real and self.arm_real is None:
-            raise Exception("arm must not be None if move_real is True")
-
-        self.command_queue = queue.Queue()
-        self.decomposed_command_queue = queue.Queue()
-
         self.cartesian_pos = Position()
         self.future_cartesian_pos = Position()
+        if move_real and self.arm_real.connected:  # type: ignore
+            self.joint_positions = list(np.deg2rad(self.arm_real.angles))  # type: ignore
+        else:
+            self.joint_positions = [0] * self.DOFs
 
-        self.joint_positions = [0] * self.DOFs
+        self.decomposed_command_queue = queue.Queue()
 
-        self.command_decomposer_thread = threading.Thread(
-            target=self.decompose_commands
-        )
-        self.command_decomposer_thread.start()
+        subscribe("new_command_str", decompose_commands)
+        subscribe("new_command", self.decompose_command)
 
     def decompose_command(self, command: Command):
         """Create intermediate points from a Command to generate a path."""
@@ -109,26 +98,20 @@ class Controller:
         )
 
         points = goal_traj.q
-        # print(points)
+        # print(f"{points=}")
 
-        return points
+        for point in points:
+            self.decomposed_command_queue.put(point)
 
-    def decompose_commands(self):
-        """Loop for getting commands and decomposing them."""
-        while True:
-            try:
-                new_command: Command = self.command_queue.get(block=True)
-            except queue.Empty:
-                continue
+        self.future_cartesian_pos = command
 
-            decomposed_command = self.decompose_command(new_command)
 
-            for traj in decomposed_command:
-                self.decomposed_command_queue.put(traj)
+def decompose_commands(command_str: str):
+    """Loop for getting commands and decomposing them."""
 
-            self.command_queue.task_done()
+    new_command = Command.from_string(command_str)
 
-            self.future_cartesian_pos = new_command
+    post_event("decompose_new_command", new_command)
 
 
 def compute_trajectory(
