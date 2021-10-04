@@ -19,6 +19,7 @@ from src.real.robot_real import XArmReal
 
 VIDEO_PATH = "/dev/video0"
 MOVE_ARM = True
+ARM_IP="172.21.72.200"
 
 
 def worker(robot: Any, time_step: float) -> None:
@@ -100,7 +101,7 @@ def main():
     cap = cv2.VideoCapture(VIDEO_PATH)  # pylint: disable=no-member
 
     if MOVE_ARM:
-        xarm_real = XArmReal("172.21.72.200")
+        xarm_real = XArmReal(ARM_IP)
         xarm_real.connect_loop()
     else:
         xarm_real = None

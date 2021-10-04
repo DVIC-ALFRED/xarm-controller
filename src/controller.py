@@ -15,38 +15,30 @@ from .command import Position, Command
 ROBOT_DOFS = 6
 END_EFFECTOR_INDEX = 6
 MAX_SPEED = 1000
-
-# TODO
-# lower limits for null space (todo: set them to proper range)
-# ll = [-17] * ROBOT_DOFS
-# upper limits for null space (todo: set them to proper range)
-# ul = [17] * ROBOT_DOFS
-# joint ranges for null space (todo: set them to proper range)
-# jr = [17] * ROBOT_DOFS
 # * -----------------------------------------------------------------
+
+# pylint: disable=too-many-instance-attributes,too-many-arguments,too-many-locals
 
 
 class Controller:
     """Robot controller class. Holds global variables used when controlling the robot."""
 
-    # pylint: disable=too-many-instance-attributes
+    DOFs: int
+    end_effector_index: int
+    max_speed: int
 
-    DOFs : int
-    end_effector_index : int
-    max_speed : int
-
-    move_real : bool
-    arm_real : Optional[XArmReal]
-    use_null_space : bool
-    use_dynamics : bool
+    move_real: bool
+    arm_real: Optional[XArmReal]
+    use_null_space: bool
+    use_dynamics: bool
 
     command_queue: queue.Queue
     decomposed_command_queue: queue.Queue
 
-    cartesian_pos : Position
-    future_cartesian_pos : Position
-    joint_positions : List[int]
-    command_decomposer_thread : threading.Thread
+    cartesian_pos: Position
+    future_cartesian_pos: Position
+    joint_positions: List[int]
+    command_decomposer_thread: threading.Thread
 
     def __init__(
         self,
@@ -55,6 +47,9 @@ class Controller:
         use_null_space: bool = False,
         use_dynamics: bool = True,
     ):
+        if self.move_real and self.arm_real is None:
+            raise Exception("arm must not be None if move_real is True")
+
         self.DOFs = ROBOT_DOFS
         self.end_effector_index = END_EFFECTOR_INDEX
         self.max_speed = MAX_SPEED
@@ -68,20 +63,16 @@ class Controller:
         self.use_null_space = use_null_space
         self.use_dynamics = use_dynamics
 
-        if self.move_real and self.arm_real is None:
-            raise Exception("arm must not be None if move_real is True")
-
         self.command_queue = queue.Queue()
         self.decomposed_command_queue = queue.Queue()
 
         self.cartesian_pos = Position()
         self.future_cartesian_pos = Position()
-
         self.joint_positions = [0] * self.DOFs
-
         self.command_decomposer_thread = threading.Thread(
             target=self.decompose_commands
         )
+
         self.command_decomposer_thread.start()
 
     def decompose_command(self, command: Command):

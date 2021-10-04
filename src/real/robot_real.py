@@ -10,6 +10,7 @@ class XArmReal(XArmAPI):
         super().__init__(port=ip, do_not_open=True)
 
     def connect_loop(self):
+        """Try to connect indefinitely, with a pause of 3 seconds between tries."""
         connected = False
         while not connected:
             try:
