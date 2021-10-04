@@ -1,5 +1,4 @@
 import queue
-import threading
 from typing import List, Optional
 
 import numpy as np
@@ -8,6 +7,7 @@ from roboticstoolbox.tools.trajectory import Trajectory
 
 from .real.robot_real import XArmReal
 from .command import Position, Command
+from .event import subscribe, post_event
 
 # * -----------------------------------------------------------------
 # * GLOBAL VARIABLES
@@ -32,13 +32,11 @@ class Controller:
     use_null_space: bool
     use_dynamics: bool
 
-    command_queue: queue.Queue
-    decomposed_command_queue: queue.Queue
-
     cartesian_pos: Position
     future_cartesian_pos: Position
     joint_positions: List[int]
-    command_decomposer_thread: threading.Thread
+
+    decomposed_command_queue: queue.Queue
 
     def __init__(
         self,
@@ -47,7 +45,7 @@ class Controller:
         use_null_space: bool = False,
         use_dynamics: bool = True,
     ):
-        if self.move_real and self.arm_real is None:
+        if move_real and arm_real is None:
             raise Exception("arm must not be None if move_real is True")
 
         self.DOFs = ROBOT_DOFS
@@ -63,21 +61,20 @@ class Controller:
         self.use_null_space = use_null_space
         self.use_dynamics = use_dynamics
 
-        self.command_queue = queue.Queue()
-        self.decomposed_command_queue = queue.Queue()
-
         self.cartesian_pos = Position()
         self.future_cartesian_pos = Position()
         self.joint_positions = [0] * self.DOFs
-        self.command_decomposer_thread = threading.Thread(
-            target=self.decompose_commands
-        )
 
-        self.command_decomposer_thread.start()
+        self.decomposed_command_queue = queue.Queue()
+
+        subscribe("new_command_str", self.decompose_commands)
+        subscribe("new_command", self.decompose_command)
 
     def decompose_command(self, command: Command):
         """Create intermediate points from a Command to generate a path."""
         # print(command)
+
+        self.future_cartesian_pos = command
 
         goal_xyzrpy = Position(*command.xyzrpy)
         # goal_xyzrpy = list(map(lambda x: round(x, 4), goal_xyzrpy))
@@ -102,24 +99,16 @@ class Controller:
         points = goal_traj.q
         # print(points)
 
-        return points
+        for point in points:
+            self.decomposed_command_queue.put(point)
 
-    def decompose_commands(self):
+    def decompose_commands(self, command_str: str):
         """Loop for getting commands and decomposing them."""
-        while True:
-            try:
-                new_command: Command = self.command_queue.get(block=True)
-            except queue.Empty:
-                continue
 
-            decomposed_command = self.decompose_command(new_command)
+        new_command = Command.from_string(command_str)
 
-            for traj in decomposed_command:
-                self.decomposed_command_queue.put(traj)
+        post_event("decompose_new_command", new_command)
 
-            self.command_queue.task_done()
-
-            self.future_cartesian_pos = new_command
 
 
 def compute_trajectory(

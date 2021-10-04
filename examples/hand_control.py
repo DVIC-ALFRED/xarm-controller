@@ -16,28 +16,32 @@ import src.sim.robot_sim as xarm_sim
 from src.command import Command
 from src.controller import Controller
 from src.real.robot_real import XArmReal
+from src.event import subscribe, post_event
 
 VIDEO_PATH = "/dev/video0"
-MOVE_ARM = True
-ARM_IP="172.21.72.200"
+MOVE_ARM = False
+ARM_IP = "172.21.72.200"
 
 
 def worker(robot: Any, time_step: float) -> None:
     """Thread to run simulation."""
+
     while 1:
         robot.step()
         p.stepSimulation()
         time.sleep(time_step)
 
 
-def send_command(controller: Controller, command: Command) -> None:
+def send_command(command: Command) -> None:
     """Send extracted command to robot."""
-    controller.command_queue.put(command)
+
+    post_event("new_command", command)
 
 
 def coords_extracter(controller: Controller):
     """Exctract coords to send command to robot.
     To be executed inside of xarm_hand_control module."""
+
     SKIPPED_COMMANDS = 5
     COEFF = 22
 
@@ -79,22 +83,21 @@ def coords_extracter(controller: Controller):
 
         # print(command)
 
-        send_command(
-            controller,
-            command,
-        )
+        send_command(command)
 
     return coords_to_command
 
 
 def setup_pybullet() -> None:
     """Setup PyBullet environment."""
+
     p.connect(p.GUI)
     p.setAdditionalSearchPath(pd.getDataPath())
 
 
 def main():
     """Example: move xArm with hand."""
+
     time_step = 1.0 / 60.0
     setup_pybullet()
 
@@ -124,6 +127,7 @@ def main():
             cap,
         ],
         kwargs={"coords_extracter_func": coords_extracter(controller)},
+        daemon=True,
     )
     hand_control_thread.start()
 

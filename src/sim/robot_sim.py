@@ -145,7 +145,7 @@ class XArmSim:
     def step(self):
         try:
             target_position = self.controller.decomposed_command_queue.get(block=False)
-            # print(target_joint_positions)
+            # print(target_position)
 
             self.controller.decomposed_command_queue.task_done()
         except queue.Empty:
