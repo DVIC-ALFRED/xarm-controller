@@ -1,7 +1,6 @@
 import queue
 import threading
 import time
-from typing import Any
 
 import numpy as np
 import pybullet as p
