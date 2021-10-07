@@ -64,7 +64,10 @@ class Controller:
         self.cartesian_pos = Position()
         self.future_cartesian_pos = Position()
         if move_real and self.arm_real.connected:  # type: ignore
-            self.joint_positions = list(np.deg2rad(self.arm_real.angles))  # type: ignore
+            if self.arm_real.default_is_radian:  # type: ignore
+                self.joint_positions = self.arm_real.angles  # type: ignore
+            else:
+                self.joint_positions = list(np.deg2rad(self.arm_real.angles))  # type: ignore
         else:
             self.joint_positions = [0] * self.DOFs
 
