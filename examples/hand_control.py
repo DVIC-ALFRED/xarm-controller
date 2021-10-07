@@ -45,7 +45,7 @@ def coords_extracter(controller: Controller):
 
         current[0] = 0
 
-        if np.linalg.norm(data[0:2], 2) < 0.1:
+        if np.linalg.norm(data[0:2], 2) < 0.05:
             return
 
         x = data[0] * COEFF / 1000
